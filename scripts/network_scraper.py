@@ -69,7 +69,7 @@ async def scrape_and_capture_network(url: str):
 # --- Main execution block ---
 if __name__ == "__main__":
     # Example URL to scrape
-    target_url = "https://bsky.app/profile/iwillnotbesilenced.bsky.social/follows" # You can change this to any URL
+    target_url = "https://bsky.app/profile/iwillnotbesilenced.bsky.social" # You can change this to any URL
 
     # Run the asynchronous function
     asyncio.run(scrape_and_capture_network(target_url))

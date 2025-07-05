@@ -1,6 +1,0 @@
-README.md
-pyproject.toml
-src/bsr.egg-info/PKG-INFO
-src/bsr.egg-info/SOURCES.txt
-src/bsr.egg-info/dependency_links.txt
-src/bsr.egg-info/top_level.txt

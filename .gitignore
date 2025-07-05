@@ -1,2 +1,5 @@
 bsr.egg-info
 .venv
+__pycache__
+pdm.lock
+build

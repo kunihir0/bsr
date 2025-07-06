@@ -3,8 +3,8 @@ name = "bsr"
 version = "0.1.0"
 description = "Default template for PDM package"
 readme = "README.md"
-requires-python = "==3.13.*"
-dependencies = ["playwright>=1.53.0"]
+requires-python = "==3.9.*"
+dependencies = ["playwright>=1.53.0", "typer[rich]>=0.16.0", "qdrant-client>=1.14.3", "toml>=0.10.2"]
 authors = [
     {name = "kunihir0", email = "kunihiro@tutanota.com"},
 ]

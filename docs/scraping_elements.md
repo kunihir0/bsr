@@ -1,36 +1,55 @@
-# Blue Sky Scraping Data Elements
+# Blue Sky Scraping Data Elements (API Based)
 
-This document outlines the specific data elements to be scraped from a user's profile and "following" list pages on Blue Sky. The selectors and attributes are based on the provided HTML snippets.
-
-## 1. User Profile Page (`profile.html`)
-
-The following data points should be extracted from a user's main profile page.
-
-| Data Element | Selector / Method | Attribute / Content | Example |
-| :--- | :--- | :--- | :--- |
-| **Display Name** | `div[data-testid="profileHeaderDisplayName"]` | Text Content | `Raider` |
-| **Handle** | `div` containing `‪@...‬` | Text Content | `‪@iwillnotbesilenced.bsky.social` |
-| **Profile Description**| `div[data-testid="profileHeaderDescription"]` | Text Content | `FASCISM IS NOT TO BE DEBATED...` |
-| **Avatar URL** | `div[data-testid="userAvatarImage"] img` | `src` | `https://.../bafkreibo44...` |
-| **Banner URL** | `div[data-testid="userBannerImage"] img` | `src` | `https://.../bafkreic64...` |
-| **Followers Count** | `a[data-testid="profileHeaderFollowersButton"] span:first-child` | Text Content | `41.4K` |
-| **Following Count** | `a[data-testid="profileHeaderFollowsButton"] span:first-child` | Text Content | `12.3K` |
-| **Posts Count** | `div` containing `posts` | Text Content (numeric part) | `9K` |
+This document outlines the specific data elements to be scraped from Blue Sky's public API. This approach supersedes HTML scraping and relies on intercepting network requests to capture clean JSON data.
 
 ---
 
-## 2. Following List Page (`following.html`)
+## 1. User Profile
 
-The following data points should be extracted for *each user* listed on the "following" page. This is the primary source for discovering new users to add to the scraping queue.
+This data is retrieved from the `app.bsky.actor.getProfile` endpoint.
 
-| Data Element | Selector / Method | Attribute / Content | Example |
-| :--- | :--- | :--- | :--- |
-| **Profile Link (DID)**| `a[href^="/profile/did:plc:"]` | `href` | `/profile/did:plc:2mph3xlusws6dl6fqr2gbyjg` |
-| **Display Name** | Parent `div` -> `div` with `font-weight: 600` | Text Content | `Michele` |
-| **Handle** | Parent `div` -> `div` containing `‪@...‬` | Text Content | `‪@tenderlee.bsky.social` |
-| **Description** | `div[data-word-wrap="1"]` | Text Content | `Here for politics. TN Blue voter...` |
-| **Avatar URL** | `div[data-testid="userAvatarImage"] img` | `src` | `https://.../bafkreiarwp...` |
+| Data Element | JSON Key | Example |
+| :--- | :--- | :--- |
+| **DID** | `did` | `did:plc:udnac33pmf2iwcblpeai5a5p` |
+| **Handle** | `handle` | `iwillnotbesilenced.bsky.social` |
+| **Display Name** | `displayName` | `Raider` |
+| **Description** | `description` | `FASCISM IS NOT TO BE DEBATED...` |
+| **Avatar URL** | `avatar` | `https://cdn.bsky.app/...` |
+| **Banner URL** | `banner` | `https://cdn.bsky.app/...` |
+| **Followers Count** | `followersCount` | `41492` |
+| **Following Count** | `followsCount` | `12317` |
+| **Posts Count** | `postsCount` | `9030` |
+| **Pinned Post URI** | `pinnedPost.uri` | `at://did:plc:udnac33...` |
 
-### Note on Data Extraction Strategy:
+---
 
-As outlined in the main development plan, the most efficient way to gather this data is by **intercepting network requests**. While these HTML selectors provide a reliable fallback and are excellent for initial analysis, the primary implementation should focus on capturing the JSON responses from the Blue Sky API calls that populate these pages. This avoids brittle, slow, and resource-intensive HTML parsing.
+## 2. Following List
+
+This data is retrieved from the `app.bsky.graph.getFollows` endpoint. The response contains a `follows` array, and the following keys should be extracted for each user object in the array.
+
+| Data Element | JSON Key | Example |
+| :--- | :--- | :--- |
+| **DID** | `did` | `did:plc:2mph3xlusws6dl6fqr2gbyjg` |
+| **Handle** | `handle` | `tenderlee.bsky.social` |
+| **Display Name** | `displayName` | `Michele` |
+| **Description** | `description` | `Here for politics. TN Blue voter...` |
+| **Avatar URL** | `avatar` | `https://cdn.bsky.app/...` |
+
+---
+
+## 3. User Feed (Posts)
+
+This data is retrieved from the `app.bsky.feed.getAuthorFeed` endpoint. The response contains a `feed` array, and the following keys should be extracted for each `post` object.
+
+| Data Element | JSON Key | Example |
+| :--- | :--- | :--- |
+| **Post URI** | `post.uri` | `at://did:plc:udnac33.../3ltad2l3cic2h` |
+| **Post CID** | `post.cid` | `bafyreihortbkkuzkxxx2hlc4vg6ikzzlia2lqz5jkr7y5hhpf4gw4m3lhi` |
+| **Post Text** | `post.record.text` | `Yesterday in LA. the LAPD chased & brutalized...` |
+| **Created At** | `post.record.createdAt` | `2025-07-05T17:51:03.020Z` |
+| **Reply Count** | `post.replyCount` | `68` |
+| **Repost Count**| `post.repostCount` | `215` |
+| **Like Count** | `post.likeCount` | `372` |
+| **Quote Count** | `post.quoteCount` | `24` |
+| **Embed Type** | `post.embed.$type` | `app.bsky.embed.video#view` |
+| **Embed Image/Video**| `post.embed.images` or `post.embed.video` | (Contains URLs and metadata) |

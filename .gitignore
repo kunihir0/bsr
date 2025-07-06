@@ -3,3 +3,5 @@ bsr.egg-info
 __pycache__
 pdm.lock
 build
+.env
+.kilocode

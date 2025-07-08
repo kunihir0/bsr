@@ -46,44 +46,88 @@ def generate_layout() -> Panel:
     )
     return layout
 
-async def run_pipeline():
+app = typer.Typer()
+
+@app.command()
+def spider(
+    seed_user: str = typer.Option(None, "--seed-user", "-s", help="Seed user handle to start spidering from."),
+    limit: int = typer.Option(10, "--limit", "-l", help="Number of users to discover.")
+):
+    """Run the spider task to discover new users."""
+    async def _run():
+        async with SessionManager() as sm:
+            hive_mind = HiveMind()
+            spider_task = SpiderTask(sm, hive_mind)
+            
+            user_to_spider = seed_user
+            if not user_to_spider:
+                with open("seed_users.txt", "r") as f:
+                    seed_url = f.read().strip()
+                    user_to_spider = seed_url.split("/")[-1]
+
+            await spider_task.run(user_to_spider)
+    
+    asyncio.run(_run())
+
+@app.command()
+def collect_profiles(limit: int = typer.Option(10, "--limit", "-l", help="Number of profiles to collect.")):
+    """Run the profile collector task."""
+    async def _run():
+        async with SessionManager() as sm:
+            hive_mind = HiveMind()
+            profile_collector = ProfileCollectorTask(sm, hive_mind)
+            hive_mind.limit = limit
+            await profile_collector.run()
+
+    asyncio.run(_run())
+
+@app.command()
+def collect_posts(limit: int = typer.Option(5, "--limit", "-l", help="Number of users to collect posts for.")):
+    """Run the post collector task."""
+    async def _run():
+        async with SessionManager() as sm:
+            hive_mind = HiveMind()
+            post_collector = PostCollectorTask(sm, hive_mind)
+            hive_mind.limit = limit
+            await post_collector.run()
+    
+    asyncio.run(_run())
+
+@app.command()
+def run_pipeline(
+    seed_user: str = typer.Option(None, "--seed-user", "-s", help="Seed user handle to start spidering from."),
+    profile_limit: int = typer.Option(10, "--profile-limit", help="Number of profiles to collect."),
+    post_limit: int = typer.Option(5, "--post-limit", help="Number of users to collect posts for.")
+):
     """Runs the full data collection pipeline."""
-    async with SessionManager() as sm:
-        hive_mind = HiveMind() # This will now use the config.toml by default
-        
-        # --- SPIDER TASK ---
-        spider = SpiderTask(sm, hive_mind)
-        with open("seed_users.txt", "r") as f:
-            seed_url = f.read().strip()
-            seed_handle = seed_url.split("/")[-1]
+    async def _run():
+        async with SessionManager() as sm:
+            hive_mind = HiveMind()
+            
+            # --- SPIDER TASK ---
+            spider_task = SpiderTask(sm, hive_mind)
+            user_to_spider = seed_user
+            if not user_to_spider:
+                with open("seed_users.txt", "r") as f:
+                    seed_url = f.read().strip()
+                    user_to_spider = seed_url.split("/")[-1]
+            await spider_task.run(user_to_spider)
 
-        await spider.run(seed_handle)
+            # --- PROFILE COLLECTOR TASK ---
+            profile_collector = ProfileCollectorTask(sm, hive_mind)
+            hive_mind.limit = profile_limit
+            await profile_collector.run()
 
-        # --- PROFILE COLLECTOR TASK ---
-        profile_collector = ProfileCollectorTask(sm, hive_mind)
-        await profile_collector.run()
-
-        # --- POST COLLECTOR TASK ---
-        post_collector = PostCollectorTask(sm, hive_mind)
-        await post_collector.run()
-
-def main(debug: bool = typer.Option(False, "--debug", help="Enable debug logging.")):
-    """
-    Main entry point for the Blue Sky Scraper CLI.
-    """
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logger.debug("Debug mode enabled.")
+            # --- POST COLLECTOR TASK ---
+            post_collector = PostCollectorTask(sm, hive_mind)
+            hive_mind.limit = post_limit
+            await post_collector.run()
 
     console = Console()
-    
-    # For now, we'll run the pipeline directly.
-    # The rich Live display is more for a long-running, multi-worker setup.
-    # We will adapt this later to show real-time status from the running tasks.
     console.print("[bold green]Starting Blue Sky Scraper Pipeline...[/bold green]")
-    asyncio.run(run_pipeline())
+    asyncio.run(_run())
     console.print("[bold green]Pipeline finished.[/bold green]")
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    app()

@@ -22,39 +22,17 @@ class SpiderTask:
         self.hive_mind = hive_mind
         self.discovered_users: List[str] = []
 
-    async def _handle_follows_route(self, route: Route):
-        """
-        Intercepts the 'getFollows' API request and captures the user data
-        from the JSON response.
-        """
-        try:
-            response = await route.fetch()
-            json_data = await response.json()
-            
-            if "follows" in json_data and isinstance(json_data["follows"], list):
-                # Save the raw data to the staging area
-                staging_path = Path("data/staging/follows")
-                staging_path.mkdir(exist_ok=True, parents=True)
-                
-                # Use the 'subject' DID if available, otherwise use a generic name
-                subject_did = json_data.get("subject", {}).get("did", "unknown_user")
-                
-                with open(staging_path / f"{subject_did}_follows.jsonl", "a") as f:
-                    for user in json_data["follows"]:
-                        f.write(json.dumps(user) + "\n")
-
-                for user in json_data["follows"]:
-                    if isinstance(user, dict) and "did" in user:
-                        did = user.get("did")
-                        if did and did not in self.discovered_users:
-                            self.discovered_users.append(did)
-                            logger.debug(f"Discovered user via network interception: {did}")
-            
-            # Fulfill the request to let the page load normally
-            await route.fulfill(response=response)
-        except Exception as e:
-            logger.error(f"Error processing 'getFollows' route: {e}")
-            await route.continue_()
+    async def _scrape_followers(self, page: Page) -> List[str]:
+        """Scrapes followers from a user's profile page."""
+        dids = []
+        user_links = await page.locator('a[href*="/profile/did:plc:"]').all()
+        for link in user_links:
+            href = await link.get_attribute('href')
+            if href:
+                did = href.split('/')[-1]
+                if did.startswith('did:plc:'):
+                    dids.append(did)
+        return list(set(dids)) # Return unique dids
 
     async def run(self, seed_user_handle: str):
         """
@@ -68,22 +46,24 @@ class SpiderTask:
         page = await context.new_page()
 
         try:
-            # Set up network interception
-            await page.route(
-                "**/xrpc/app.bsky.graph.getFollows",
-                self._handle_follows_route
-            )
-
             # Navigate to the user's 'following' page
             url = f"https://bsky.app/profile/{seed_user_handle}/follows"
             logger.info(f"Navigating to {url}")
             await page.goto(url, wait_until="networkidle")
 
             # Scroll down to load more users
-            for _ in range(10): # Scroll 10 times to get a good number of users
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await asyncio.sleep(1)
+            last_height = await page.evaluate("document.body.scrollHeight")
+            while True:
+                await page.mouse.wheel(0, 15000)
+                await asyncio.sleep(2)  # Wait for new users to load
+                new_height = await page.evaluate("document.body.scrollHeight")
+                if new_height == last_height:
+                    break
+                last_height = new_height
 
+            discovered_dids = await self._scrape_followers(page)
+            self.discovered_users.extend(discovered_dids)
+            
             logger.info(f"Finished spidering. Found {len(self.discovered_users)} unique users.")
 
             # Add discovered users to the Hive Mind

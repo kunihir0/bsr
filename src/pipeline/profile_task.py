@@ -23,24 +23,23 @@ class ProfileCollectorTask:
         self.hive_mind = hive_mind
         self.collected_profiles: Dict[str, Any] = {}
 
-    async def _handle_profile_route(self, route: Route):
-        """
-        Intercepts the 'getProfile' API request and captures the user profile
-        from the JSON response.
-        """
+    async def _scrape_profile(self, page: Page) -> Dict[str, Any]:
+        """Scrapes profile data from a user's profile page."""
+        profile = {}
         try:
-            response = await route.fetch()
-            json_data = await response.json()
+            profile['displayName'] = await page.locator('[data-testid="profileHeaderDisplayName"]').inner_text()
+            profile['handle'] = await page.locator('[data-testid="profileHeaderHandle"]').inner_text()
+            profile['followersCount'] = await page.locator('[data-testid="profileHeaderFollowersButton"]').inner_text()
+            profile['followsCount'] = await page.locator('[data-testid="profileHeaderFollowsButton"]').inner_text()
+            profile['description'] = await page.locator('[data-testid="profileHeaderDescription"]').inner_text()
             
-            did = json_data.get("did")
-            if did:
-                self.collected_profiles[did] = json_data
-                logger.debug(f"Captured profile for user {did}")
+            # Extract numbers from counts
+            profile['followersCount'] = int(''.join(filter(str.isdigit, profile['followersCount'])))
+            profile['followsCount'] = int(''.join(filter(str.isdigit, profile['followsCount'])))
 
-            await route.fulfill(response=response)
         except Exception as e:
-            logger.error(f"Error processing 'getProfile' route: {e}")
-            await route.continue_()
+            logger.error(f"Error scraping profile: {e}")
+        return profile
 
     async def run(self):
         """
@@ -61,16 +60,14 @@ class ProfileCollectorTask:
         async def collect_profile(user_did: str):
             page = await context.new_page()
             try:
-                await page.route(
-                    "**/xrpc/app.bsky.actor.getProfile",
-                    self._handle_profile_route
-                )
                 url = f"https://bsky.app/profile/{user_did}"
                 logger.info(f"Navigating to profile: {url}")
                 await page.goto(url, wait_until="networkidle")
-                await asyncio.sleep(2)
-
-                if user_did in self.collected_profiles:
+                
+                profile_data = await self._scrape_profile(page)
+                if profile_data:
+                    self.collected_profiles[user_did] = profile_data
+                    
                     # Save the raw data to the staging area
                     staging_path = Path("data/staging/profiles")
                     staging_path.mkdir(exist_ok=True, parents=True)

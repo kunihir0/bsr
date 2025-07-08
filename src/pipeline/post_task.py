@@ -22,28 +22,40 @@ class PostCollectorTask:
         self.hive_mind = hive_mind
         self.collected_posts: Dict[str, List[Any]] = {}
 
-    async def _handle_feed_route(self, route: Route, user_did: str):
-        """
-        Intercepts the 'getAuthorFeed' API request and captures the post data
-        from the JSON response.
-        """
-        try:
-            response = await route.fetch()
-            json_data = await response.json()
-            
-            if "feed" in json_data:
-                if user_did not in self.collected_posts:
-                    self.collected_posts[user_did] = []
-                
-                posts = json_data["feed"]
-                self.collected_posts[user_did].extend(posts)
-                logger.debug(f"Captured {len(posts)} posts for user {user_did}")
-            
-            await route.fulfill(response=response)
-        except Exception as e:
-            logger.error(f"Error processing 'getAuthorFeed' route: {e}")
-            await route.continue_()
+    async def _scrape_posts(self, page: Page, user_did: str):
+        """Scrapes posts from a user's profile page."""
+        posts = []
+        post_elements = await page.locator('[data-testid^="postThreadItem-by-"]').all()
+        for post_el in post_elements:
+            try:
+                post_text_element = await post_el.query_selector('div[data-word-wrap="1"]')
+                post_text = await post_text_element.inner_text() if post_text_element else ""
 
+                reply_count_element = await post_el.query_selector('[data-testid="replyCount"]')
+                reply_count = await reply_count_element.inner_text() if reply_count_element else "0"
+                
+                repost_count_element = await post_el.query_selector('[data-testid="repostCount"]')
+                repost_count = await repost_count_element.inner_text() if repost_count_element else "0"
+
+                like_count_element = await post_el.query_selector('[data-testid="likeCount"]')
+                like_count = await like_count_element.inner_text() if like_count_element else "0"
+
+                post_link_element = await post_el.query_selector('a[href*="/post/"]')
+                post_uri = await post_link_element.get_attribute('href') if post_link_element else ""
+
+
+                posts.append({
+                    "uri": post_uri,
+                    "text": post_text,
+                    "replyCount": int(reply_count),
+                    "repostCount": int(repost_count),
+                    "likeCount": int(like_count),
+                })
+            except Exception as e:
+                logger.error(f"Error scraping a post for {user_did}: {e}")
+        
+        return posts
+    
     async def run(self):
         """
         Fetches 'profile_collected' users from the Hive Mind, collects their posts,
@@ -63,23 +75,22 @@ class PostCollectorTask:
         async def collect_posts(user_did: str):
             page = await context.new_page()
             try:
-                self.collected_posts[user_did] = []
-
-                await page.route(
-                    "**/xrpc/app.bsky.feed.getAuthorFeed",
-                    lambda route: self._handle_feed_route(route, user_did)
-                )
-
                 url = f"https://bsky.app/profile/{user_did}"
                 logger.info(f"Navigating to profile for post collection: {url}")
                 await page.goto(url, wait_until="networkidle")
 
-                # Scroll to capture the feed
-                for _ in range(5): # Scroll a few times to get more posts
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await asyncio.sleep(1)
+                # Scroll to load all posts
+                last_height = await page.evaluate("document.body.scrollHeight")
+                while True:
+                    await page.mouse.wheel(0, 15000)
+                    await asyncio.sleep(2)  # Wait for new posts to load
+                    new_height = await page.evaluate("document.body.scrollHeight")
+                    if new_height == last_height:
+                        break
+                    last_height = new_height
 
-                await page.unroute("**/xrpc/app.bsky.feed.getAuthorFeed")
+                scraped_posts = await self._scrape_posts(page, user_did)
+                self.collected_posts[user_did] = scraped_posts
 
                 if self.collected_posts.get(user_did):
                     # Save the raw data to the staging area
